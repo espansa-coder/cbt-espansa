@@ -20,12 +20,18 @@
     .sub-header { background-color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e5e7eb; }
     .timer-box { background-color: #fef08a; color: #854d0e; padding: 6px 12px; font-weight: bold; border-radius: 4px; }
     
-    /* Login Form */
-    .login-container { max-width: 400px; margin: 80px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    /* Card Container */
+    .card-container { max-width: 500px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     .form-group { margin-bottom: 15px; }
     .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
     .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-    .btn-login { width: 100%; padding: 10px; background-color: var(--header-bg); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .btn-action { width: 100%; padding: 12px; background-color: var(--header-bg); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+    .btn-start { background-color: #16a34a; }
+
+    /* Detail Siswa Table */
+    .confirm-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .confirm-table td { padding: 10px; border-bottom: 1px solid #eee; }
+    .confirm-table td:first-child { font-weight: bold; width: 40%; color: #4b5563; }
 
     /* Container Soal */
     .exam-container { display: none; max-width: 900px; margin: 20px auto 80px auto; background: white; padding: 25px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -56,21 +62,38 @@
     <div class="timer-box">Sisa Waktu: <span id="timer-text">01:00:00</span></div>
   </div>
 
-  <!-- Form Login -->
-  <div id="login-section" class="login-container">
-    <h2 style="text-align: center; color: var(--header-bg);">LOGIN SISWA</h2>
-    <div class="form-group">
-      <label>NISN</label>
-      <input type="text" id="nisn-input" placeholder="Masukkan NISN">
-    </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" id="pass-input" placeholder="Masukkan Password">
-    </div>
-    <button class="btn-login" onclick="loginSiswa()">MASUK UJIAN</button>
+  <!-- 1. Form Login -->
+  <div id="login-section" class="card-container">
+    <h2 style="text-align: center; color: var(--header-bg); margin-top: 0;">LOGIN SISWA</h2>
+    <form onsubmit="event.preventDefault(); loginSiswa();">
+      <div class="form-group">
+        <label>NISN</label>
+        <input type="text" id="nisn-input" placeholder="Masukkan NISN" required>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="pass-input" placeholder="Masukkan Password" required>
+      </div>
+      <button type="submit" id="btn-login" class="btn-action">MASUK</button>
+    </form>
   </div>
 
-  <!-- Area Pengerjaan Soal -->
+  <!-- 2. Halaman Konfirmasi Data Siswa -->
+  <div id="confirm-section" class="card-container" style="display: none;">
+    <h3 style="color: var(--header-bg); margin-top: 0; text-align: center;">KONFIRMASI DATA PESERTA</h3>
+    <table class="confirm-table">
+      <tr><td>NISN</td><td id="conf-nisn">-</td></tr>
+      <tr><td>Nama Peserta</td><td id="conf-nama">-</td></tr>
+      <tr><td>Kelas</td><td id="conf-kelas">-</td></tr>
+      <tr><td>Status Ujian</td><td id="conf-status">-</td></tr>
+    </table>
+    <div style="background: #fef3c7; color: #92400e; padding: 10px; border-radius: 4px; font-size: 0.85rem; margin-bottom: 15px;">
+      * Klik tombol di bawah untuk masuk ke mode Fullscreen dan mulai mengerjakan ujian.
+    </div>
+    <button class="btn-action btn-start" onclick="startExam()">MULAI UJIAN</button>
+  </div>
+
+  <!-- 3. Area Pengerjaan Soal -->
   <div id="exam-section" class="exam-container">
     <div id="question-text">Memuat soal...</div>
     <div id="options-container" style="margin-top: 20px;"></div>
@@ -84,8 +107,8 @@
   </div>
 
   <script>
-    // TEMPELKAN URL DEPLOYMENT APPS SCRIPT ANDA DI SINI
-    const API_URL = "https://script.google.com/macros/s/AKfycbzSe-AVbINfxGsl4EZ2xJrAkVUryjq88D4hjo6-j7Rawb6DZqCZIcPOFR5AZo0qDRf0/exec";
+    // TEMPELKAN URL WEB APP APPS SCRIPT ANDA DI SINI
+    const API_URL = "GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA";
 
     let currentSiswa = null;
     let listSoal = [];
@@ -93,41 +116,88 @@
     let jawabanSiswa = {};
     let raguSiswa = {};
     let violationCount = 0;
+    let isExamActive = false; // Flag status ujian aktif
+    let isDialogOpen = false; // Flag mencegah peringatan saat dialog/alert terbuka
 
-    // 1. Anti-Curang: Deteksi Pindah Tab / Blur
+    // --- DETEKSI ANTI-CURANG HANYA AKTIF SAAT UJIAN BERJALAN ---
     window.addEventListener("blur", () => {
-      if (currentSiswa) {
+      if (isExamActive && !isDialogOpen) {
         violationCount++;
-        alert(`Peringatan CBT ESPANSA!\nAnda terdeteksi meninggalkan halaman ujian (${violationCount}x).`);
+        isDialogOpen = true;
+        alert(`Peringatan CBT ESPANSA!\nAnda terdeteksi meninggalkan layar ujian (${violationCount}x).`);
+        setTimeout(() => { isDialogOpen = false; }, 500);
       }
     });
 
-    // Disable Right Click & Copy
     document.addEventListener('contextmenu', event => event.preventDefault());
 
-    // 2. Login Siswa
+    // 1. Proses Login Siswa
     async function loginSiswa() {
       const nisn = document.getElementById("nisn-input").value;
       const pass = document.getElementById("pass-input").value;
+      const btn = document.getElementById("btn-login");
 
-      if (!nisn || !pass) return alert("Isi NISN dan Password!");
+      btn.innerText = "Memproses...";
+      btn.disabled = true;
 
-      const res = await fetch(API_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "loginSiswa", nisn: nisn, password: pass })
-      });
-      const data = await res.json();
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "loginSiswa", nisn: nisn, password: pass })
+        });
+        const data = await res.json();
 
-      if (data.success) {
-        currentSiswa = data;
-        document.getElementById("user-info").innerText = `${data.nama} (${data.kelas})`;
-        document.getElementById("login-section").style.display = "none";
-        document.getElementById("sub-header").style.display = "flex";
-        document.getElementById("exam-section").style.display = "block";
-        document.getElementById("footer-nav").style.display = "flex";
-        loadSoal();
-      } else {
-        alert(data.message);
+        if (data.success) {
+          if (data.status === "Selesai") {
+            alert("Anda sudah menyelesaikan ujian ini!");
+            btn.innerText = "MASUK";
+            btn.disabled = false;
+            return;
+          }
+          currentSiswa = data;
+          
+          // Tampilkan Halaman Konfirmasi Data Siswa
+          document.getElementById("login-section").style.display = "none";
+          document.getElementById("confirm-section").style.display = "block";
+          
+          document.getElementById("conf-nisn").innerText = data.nisn;
+          document.getElementById("conf-nama").innerText = data.nama;
+          document.getElementById("conf-kelas").innerText = data.kelas;
+          document.getElementById("conf-status").innerText = data.status || "Belum Selesai";
+          document.getElementById("user-info").innerText = `${data.nama} (${data.kelas})`;
+        } else {
+          alert(data.message);
+        }
+      } catch (err) {
+        alert("Gagal terhubung ke server: " + err.message);
+      } finally {
+        btn.innerText = "MASUK";
+        btn.disabled = false;
+      }
+    }
+
+    // 2. Tombol "MULAI UJIAN" -> Fullscreen & Ambil Soal
+    async function startExam() {
+      // Masuk Mode Fullscreen Browser
+      openFullscreen();
+
+      document.getElementById("confirm-section").style.display = "none";
+      document.getElementById("sub-header").style.display = "flex";
+      document.getElementById("exam-section").style.display = "block";
+      document.getElementById("footer-nav").style.display = "flex";
+
+      isExamActive = true; // Aktifkan anti-curang
+      await loadSoal();
+    }
+
+    function openFullscreen() {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen().catch(err => console.log(err));
+      } else if (elem.webkitRequestFullscreen) { /* Safari */
+        elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) { /* IE11 */
+        elem.msRequestFullscreen();
       }
     }
 
@@ -144,7 +214,7 @@
       }
     }
 
-    // 4. Render Soal ANBK
+    // 4. Render Soal
     function renderSoal() {
       const soal = listSoal[currentIndex];
       document.getElementById("current-num").innerText = currentIndex + 1;
@@ -202,7 +272,10 @@
 
     // 5. Submit Ujian
     async function submitUjian() {
-      if (confirm("Apakah Anda yakin ingin menyelesaikan ujian CBT ESPANSA ini?")) {
+      isDialogOpen = true; // Mencegah peringatan kecurangan terpicu saat dialog confirm muncul
+      
+      const setuju = confirm("Apakah Anda yakin ingin menyelesaikan ujian CBT ESPANSA ini?");
+      if (setuju) {
         const payload = {
           action: "submitJawaban",
           nisn: currentSiswa.nisn,
@@ -220,8 +293,11 @@
 
         if (data.success) {
           alert(`Ujian Selesai!\nTerima kasih, nilai Anda telah dicatat.`);
+          isExamActive = false;
           window.location.reload();
         }
+      } else {
+        setTimeout(() => { isDialogOpen = false; }, 500);
       }
     }
   </script>
