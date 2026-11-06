@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CBT ESPANSA - Mode ANBK</title>
+  <style>
+    :root {
+      --header-bg: #1e3a8a;
+      --body-bg: #f3f4f6;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 0; background-color: var(--body-bg); user-select: none; }
+    
+    /* Top Header */
+    .top-header { background-color: var(--header-bg); color: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+    .top-header .brand { font-weight: bold; font-size: 1.1rem; }
+    
+    /* Sub Header */
+    .sub-header { background-color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e5e7eb; }
+    .timer-box { background-color: #fef08a; color: #854d0e; padding: 6px 12px; font-weight: bold; border-radius: 4px; }
+    
+    /* Login Form */
+    .login-container { max-width: 400px; margin: 80px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+    .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+    .btn-login { width: 100%; padding: 10px; background-color: var(--header-bg); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+
+    /* Container Soal */
+    .exam-container { display: none; max-width: 900px; margin: 20px auto 80px auto; background: white; padding: 25px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .option-item { display: flex; align-items: center; margin: 12px 0; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; }
+    .option-item.selected { background-color: #eff6ff; border-color: #2563eb; }
+    .option-label { font-weight: bold; width: 30px; height: 30px; background: #e5e7eb; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin-right: 15px; }
+    .option-item.selected .option-label { background-color: #2563eb; color: white; }
+
+    /* Footer Navigasi */
+    .footer-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 15px 20px; justify-content: space-between; border-top: 2px solid #e5e7eb; }
+    .btn { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .btn-prev { background-color: #dc2626; color: white; }
+    .btn-doubt { background-color: #eab308; color: white; }
+    .btn-next { background-color: #2563eb; color: white; }
+  </style>
+</head>
+<body>
+
+  <!-- Header ANBK -->
+  <div class="top-header">
+    <div class="brand">CBT ESPANSA</div>
+    <div id="user-info">Belum Login</div>
+  </div>
+
+  <!-- Sub Header Ujian -->
+  <div id="sub-header" class="sub-header" style="display: none;">
+    <div><b>Soal No: <span id="current-num">1</span></b></div>
+    <div class="timer-box">Sisa Waktu: <span id="timer-text">01:00:00</span></div>
+  </div>
+
+  <!-- Form Login -->
+  <div id="login-section" class="login-container">
+    <h2 style="text-align: center; color: var(--header-bg);">LOGIN SISWA</h2>
+    <div class="form-group">
+      <label>NISN</label>
+      <input type="text" id="nisn-input" placeholder="Masukkan NISN">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="pass-input" placeholder="Masukkan Password">
+    </div>
+    <button class="btn-login" onclick="loginSiswa()">MASUK UJIAN</button>
+  </div>
+
+  <!-- Area Pengerjaan Soal -->
+  <div id="exam-section" class="exam-container">
+    <div id="question-text">Memuat soal...</div>
+    <div id="options-container" style="margin-top: 20px;"></div>
+  </div>
+
+  <!-- Footer Navigasi -->
+  <div id="footer-nav" class="footer-nav">
+    <button class="btn btn-prev" onclick="prevSoal()">SOAL SEBELUMNYA</button>
+    <button class="btn btn-doubt" onclick="toggleRagu()"><input type="checkbox" id="chk-ragu"> RAGU-RAGU</button>
+    <button class="btn btn-next" id="btn-next" onclick="nextSoal()">SOAL BERIKUTNYA</button>
+  </div>
+
+  <script>
+    // TEMPELKAN URL DEPLOYMENT APPS SCRIPT ANDA DI SINI
+    const API_URL = "GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA";
+
+    let currentSiswa = null;
+    let listSoal = [];
+    let currentIndex = 0;
+    let jawabanSiswa = {};
+    let raguSiswa = {};
+    let violationCount = 0;
+
+    // 1. Anti-Curang: Deteksi Pindah Tab / Blur
+    window.addEventListener("blur", () => {
+      if (currentSiswa) {
+        violationCount++;
+        alert(`Peringatan CBT ESPANSA!\nAnda terdeteksi meninggalkan halaman ujian (${violationCount}x).`);
+      }
+    });
+
+    // Disable Right Click & Copy
+    document.addEventListener('contextmenu', event => event.preventDefault());
+
+    // 2. Login Siswa
+    async function loginSiswa() {
+      const nisn = document.getElementById("nisn-input").value;
+      const pass = document.getElementById("pass-input").value;
+
+      if (!nisn || !pass) return alert("Isi NISN dan Password!");
+
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "loginSiswa", nisn: nisn, password: pass })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        currentSiswa = data;
+        document.getElementById("user-info").innerText = `${data.nama} (${data.kelas})`;
+        document.getElementById("login-section").style.display = "none";
+        document.getElementById("sub-header").style.display = "flex";
+        document.getElementById("exam-section").style.display = "block";
+        document.getElementById("footer-nav").style.display = "flex";
+        loadSoal();
+      } else {
+        alert(data.message);
+      }
+    }
+
+    // 3. Load Soal dari Backend
+    async function loadSoal() {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "getSoal" })
+      });
+      const result = await res.json();
+      if (result.success) {
+        listSoal = result.data;
+        renderSoal();
+      }
+    }
+
+    // 4. Render Soal ANBK
+    function renderSoal() {
+      const soal = listSoal[currentIndex];
+      document.getElementById("current-num").innerText = currentIndex + 1;
+      document.getElementById("question-text").innerHTML = soal.pertanyaan;
+
+      const optsContainer = document.getElementById("options-container");
+      optsContainer.innerHTML = "";
+
+      const options = [
+        { label: "A", text: soal.opsi_a },
+        { label: "B", text: soal.opsi_b },
+        { label: "C", text: soal.opsi_c },
+        { label: "D", text: soal.opsi_d }
+      ];
+
+      options.forEach(opt => {
+        const selectedClass = jawabanSiswa[soal.id_soal] === opt.label ? "selected" : "";
+        optsContainer.innerHTML += `
+          <div class="option-item ${selectedClass}" onclick="selectOption('${soal.id_soal}', '${opt.label}')">
+            <div class="option-label">${opt.label}</div>
+            <div>${opt.text}</div>
+          </div>
+        `;
+      });
+
+      document.getElementById("chk-ragu").checked = !!raguSiswa[soal.id_soal];
+      document.getElementById("btn-next").innerText = (currentIndex === listSoal.length - 1) ? "SELESAI" : "SOAL BERIKUTNYA";
+    }
+
+    function selectOption(idSoal, val) {
+      jawabanSiswa[idSoal] = val;
+      renderSoal();
+    }
+
+    function toggleRagu() {
+      const idSoal = listSoal[currentIndex].id_soal;
+      raguSiswa[idSoal] = document.getElementById("chk-ragu").checked;
+    }
+
+    function prevSoal() {
+      if (currentIndex > 0) {
+        currentIndex--;
+        renderSoal();
+      }
+    }
+
+    function nextSoal() {
+      if (currentIndex < listSoal.length - 1) {
+        currentIndex++;
+        renderSoal();
+      } else {
+        submitUjian();
+      }
+    }
+
+    // 5. Submit Ujian
+    async function submitUjian() {
+      if (confirm("Apakah Anda yakin ingin menyelesaikan ujian CBT ESPANSA ini?")) {
+        const payload = {
+          action: "submitJawaban",
+          nisn: currentSiswa.nisn,
+          nama: currentSiswa.nama,
+          kelas: currentSiswa.kelas,
+          jawaban: jawabanSiswa,
+          pelanggaran: violationCount
+        };
+
+        const res = await fetch(API_URL, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          alert(`Ujian Selesai!\nTerima kasih, nilai Anda telah dicatat.`);
+          window.location.reload();
+        }
+      }
+    }
+  </script>
+</body>
+</html>
